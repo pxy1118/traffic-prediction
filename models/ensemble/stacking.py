@@ -1,7 +1,8 @@
 import numpy as np
-from typing import List, Type, Optional
+from typing import List, Type, Optional, Dict
 from ..base import BaseModel
 from torch.utils.tensorboard import SummaryWriter
+from ...utils.metrics import calculate_metrics
 
 class StackingEnsemble(BaseModel):
     def __init__(self, base_models: List[Type[BaseModel]], meta_model: Type[BaseModel], **meta_params):
@@ -11,6 +12,62 @@ class StackingEnsemble(BaseModel):
         self.meta_params = meta_params
         self.trained_base_models = []
         self.trained_meta_model = None
+        
+    def evaluate(self, X: np.ndarray, y: np.ndarray) -> Dict:
+        """评估所有基学习器和集成模型的性能
+        
+        Args:
+            X: 输入特征
+            y: 真实标签
+            
+        Returns:
+            Dict: 包含所有模型评估指标的字典
+        """
+        if not self.is_fitted:
+            raise ValueError("模型尚未训练")
+            
+        results = {}
+        
+        # 评估每个基学习器
+        for i, model in enumerate(self.trained_base_models):
+            predictions = model.predict(X)
+            metrics = calculate_metrics(y, predictions)
+            results[f'base_model_{i}'] = metrics
+            
+        # 评估集成模型
+        ensemble_predictions = self.predict(X)
+        ensemble_metrics = calculate_metrics(y, ensemble_predictions)
+        results['ensemble'] = ensemble_metrics
+        
+        return results
+        
+    def print_evaluation_table(self, X: np.ndarray, y: np.ndarray) -> None:
+        """打印评估结果表格
+        
+        Args:
+            X: 输入特征
+            y: 真实标签
+        """
+        results = self.evaluate(X, y)
+        
+        # 打印表头
+        print("\n模型评估结果:")
+        print("-" * 80)
+        print(f"{'模型名称':<15} {'MAE':<10} {'MSE':<12} {'RMSE':<10} {'MAPE':<10}")
+        print("-" * 80)
+        
+        # 打印每个基学习器的结果
+        for i, model in enumerate(self.trained_base_models):
+            metrics = results[f'base_model_{i}']
+            print(f"{f'基学习器 {i}':<15} {metrics['mae']:<10.4f} {metrics['mse']:<12.4f} "
+                  f"{metrics['rmse']:<10.4f} {metrics['mape']:<10.4f}%")
+        
+        # 打印集成模型的结果
+        ensemble_metrics = results['ensemble']
+        print("-" * 80)
+        print(f"{'集成模型':<15} {ensemble_metrics['mae']:<10.4f} {ensemble_metrics['mse']:<12.4f} "
+              f"{ensemble_metrics['rmse']:<10.4f} {ensemble_metrics['mape']:<10.4f}%")
+        print("-" * 80)
         
     def fit(self, X: np.ndarray, y: np.ndarray, writer: Optional[SummaryWriter] = None, **kwargs) -> None:
         n_samples = X.shape[0]
@@ -29,14 +86,9 @@ class StackingEnsemble(BaseModel):
             
             # 记录基模型性能
             if writer is not None:
-                loss = np.mean((predictions - y) ** 2)
-                mae = np.mean(np.abs(predictions - y))
-                mse = np.mean((predictions - y) ** 2)
-                rmse = np.sqrt(mse)
-                writer.add_scalar(f'Loss/base_model_{i}', loss, 0)
-                writer.add_scalar(f'MAE/base_model_{i}', mae, 0)
-                writer.add_scalar(f'MSE/base_model_{i}', mse, 0)
-                writer.add_scalar(f'RMSE/base_model_{i}', rmse, 0)
+                metrics = calculate_metrics(y, predictions)
+                for metric_name, value in metrics.items():
+                    writer.add_scalar(f'{metric_name}/base_model_{i}', value, 0)
         
         # 拼接元特征
         meta_X = np.column_stack(meta_features)
@@ -48,14 +100,9 @@ class StackingEnsemble(BaseModel):
         # 记录最终集成效果
         if writer is not None:
             y_pred = self.predict(X)
-            loss = np.mean((y_pred - y) ** 2)
-            mae = np.mean(np.abs(y_pred - y))
-            mse = np.mean((y_pred - y) ** 2)
-            rmse = np.sqrt(mse)
-            writer.add_scalar('Loss/ensemble', loss, 0)
-            writer.add_scalar('MAE/ensemble', mae, 0)
-            writer.add_scalar('MSE/ensemble', mse, 0)
-            writer.add_scalar('RMSE/ensemble', rmse, 0)
+            metrics = calculate_metrics(y, y_pred)
+            for metric_name, value in metrics.items():
+                writer.add_scalar(f'{metric_name}/ensemble', value, 0)
         
         self.is_fitted = True
         
