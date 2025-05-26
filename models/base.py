@@ -1,6 +1,7 @@
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Tuple, Dict, Any
+from torch.utils.tensorboard import SummaryWriter
 
 class BaseModel(ABC):
     def __init__(self, name: str):
@@ -8,7 +9,8 @@ class BaseModel(ABC):
         self.is_fitted = False
         
     @abstractmethod
-    def fit(self, X: np.ndarray, y: np.ndarray, **kwargs) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray, writer: Optional[SummaryWriter] = None, **kwargs) -> None:
+        """训练模型"""
         pass
         
     @abstractmethod

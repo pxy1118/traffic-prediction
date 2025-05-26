@@ -1,8 +1,10 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from typing import List, Tuple
+from torch.utils.data import DataLoader, TensorDataset
+from typing import List, Optional
 from ..base import BaseModel
+from torch.utils.tensorboard import SummaryWriter
 
 class BPNetwork(nn.Module):
     def __init__(self, input_size: int, hidden_sizes: List[int], output_size: int):
@@ -35,7 +37,8 @@ class MultiOutputBP(BaseModel):
         self.model = None
         self.optimizer = None
         
-    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 100, batch_size: int = 32, **kwargs) -> None:
+    def fit(self, X: np.ndarray, y: np.ndarray, epochs: int = 100, batch_size: int = 32, 
+            writer: Optional[SummaryWriter] = None, **kwargs) -> None:
         if self.model is None:
             self.model = BPNetwork(self.input_size, self.hidden_sizes, y.shape[1]).to(self.device)
             self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
@@ -43,18 +46,29 @@ class MultiOutputBP(BaseModel):
         X_tensor = torch.FloatTensor(X).to(self.device)
         y_tensor = torch.FloatTensor(y).to(self.device)
         
+        dataset = TensorDataset(X_tensor, y_tensor)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        
+        assert self.model is not None
+        assert self.optimizer is not None
+        
         self.model.train()
         for epoch in range(epochs):
-            for i in range(0, len(X_tensor), batch_size):
-                batch_X = X_tensor[i:i+batch_size]
-                batch_y = y_tensor[i:i+batch_size]
-                assert self.optimizer is not None
+            total_loss = 0
+            for batch_X, batch_y in dataloader:
                 self.optimizer.zero_grad()
-                assert self.model is not None
                 output = self.model(batch_X)
                 loss = nn.MSELoss()(output, batch_y)
                 loss.backward()
                 self.optimizer.step()
+                total_loss += loss.item()
+            
+            avg_loss = total_loss / len(dataloader)
+            if writer is not None:
+                writer.add_scalar('Loss/train', avg_loss, epoch)
+            
+            if epoch % 20 == 0:
+                print(f'Epoch {epoch}, Loss: {avg_loss:.4f}')
                 
         self.is_fitted = True
         
@@ -74,7 +88,7 @@ class MultiOutputBP(BaseModel):
             
     def load(self, path: str) -> None:
         if self.model is None:
-            self.model = BPNetwork(self.input_size, self.hidden_sizes, 1).to(self.device)
+            self.model = BPNetwork(self.input_size, self.hidden_sizes, 12).to(self.device)
         self.model.load_state_dict(torch.load(path))
         self.is_fitted = True
         
