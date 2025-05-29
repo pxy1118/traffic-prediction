@@ -1,16 +1,17 @@
 import numpy as np
 from typing import List, Type, Optional, Dict
-from ..base import BaseModel
+from models.base import BaseModel
 from torch.utils.tensorboard import SummaryWriter
-from ...utils.metrics import calculate_metrics
+from utils.metrics import calculate_metrics
 
 class BaggingEnsemble(BaseModel):
-    def __init__(self, base_model_class: Type[BaseModel], n_estimators: int = 10, **base_params):
+    def __init__(self, base_model_class: Type[BaseModel], n_estimators: int = 10, processor=None, **base_params):
         super().__init__('BaggingEnsemble')
         self.base_model_class = base_model_class
         self.n_estimators = n_estimators
         self.base_params = base_params
         self.models = []
+        self.processor = processor
         
     def evaluate(self, X: np.ndarray, y: np.ndarray) -> Dict:
         """评估所有基学习器和集成模型的性能
@@ -72,7 +73,9 @@ class BaggingEnsemble(BaseModel):
         n_samples = X.shape[0]
         self.models = []
         
+        print(f"\n开始训练Bagging集成模型 (n_estimators={self.n_estimators})...")
         for i in range(self.n_estimators):
+            print(f"\n训练基模型 {i+1}/{self.n_estimators}")
             # 随机采样训练数据
             indices = np.random.choice(n_samples, n_samples, replace=True)
             X_bootstrap = X[indices]
@@ -86,18 +89,28 @@ class BaggingEnsemble(BaseModel):
             # 记录基模型性能
             if writer is not None:
                 predictions = model.predict(X)
-                metrics = calculate_metrics(y, predictions)
+                # 反归一化预测结果和真实值
+                y_denorm = self.processor.inverse_normalize_target(y)
+                pred_denorm = self.processor.inverse_normalize_target(predictions)
+                metrics = calculate_metrics(y_denorm, pred_denorm)
                 for metric_name, value in metrics.items():
                     writer.add_scalar(f'{metric_name}/base_model_{i}', value, 0)
+                print(f"基模型 {i+1} 训练完成，MAE: {metrics['MAE']:.4f}")
         
         # 记录最终集成效果
         if writer is not None:
+            print("\n计算最终集成效果...")
             y_pred = self.predict(X)
-            metrics = calculate_metrics(y, y_pred)
+            # 反归一化预测结果和真实值
+            y_denorm = self.processor.inverse_normalize_target(y)
+            pred_denorm = self.processor.inverse_normalize_target(y_pred)
+            metrics = calculate_metrics(y_denorm, pred_denorm)
             for metric_name, value in metrics.items():
                 writer.add_scalar(f'{metric_name}/ensemble', value, 0)
-        
+            print(f"集成模型 MAE: {metrics['MAE']:.4f}")
+            
         self.is_fitted = True
+        print("\nBagging集成模型训练完成！")
         
     def predict(self, X: np.ndarray) -> np.ndarray:
         if not self.is_fitted:

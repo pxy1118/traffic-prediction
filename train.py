@@ -22,7 +22,7 @@ def adj_to_edge_index(adj: np.ndarray) -> torch.Tensor:
     edge_index = np.vstack((src, dst))
     return torch.LongTensor(edge_index)
 
-def get_model(model_name: str, input_size: Optional[int] = None, **kwargs) -> Any:
+def get_model(model_name: str, input_size: Optional[int] = None, processor: Optional[DataProcessor] = None, **kwargs) -> Any:
     models = {
         'svm': MultiOutputSVM,
         'knn': MultiOutputKNN,
@@ -50,7 +50,7 @@ def get_model(model_name: str, input_size: Optional[int] = None, **kwargs) -> An
         kwargs['base_models'] = [MultiOutputLinear, MultiOutputKNN]
         kwargs['meta_model'] = MultiOutputLinear
     
-    return models[model_name](**kwargs)
+    return models[model_name](processor=processor, **kwargs)
 
 def train(args):
     # 创建TensorBoard日志目录
@@ -72,20 +72,36 @@ def train(args):
     n_val_samples = X_val_gcn.shape[0]
     n_test_samples = X_test_gcn.shape[0]
     
-    X_train = X_train_gcn.reshape(n_train_samples * n_nodes, gcn_dim)
-    X_val = X_val_gcn.reshape(n_val_samples * n_nodes, gcn_dim)
-    X_test = X_test_gcn.reshape(n_test_samples * n_nodes, gcn_dim)
+    #########################################################
+    ####要训练全量数据注释掉这里
+    # 限制样本数
+    """
+    max_train = 2
+    max_val = 2
+    max_test = 2
+    X_train_gcn = X_train_gcn[:max_train]
+    Y_train = Y_train[:max_train]
+    X_val_gcn = X_val_gcn[:max_val]
+    Y_val = Y_val[:max_val]
+    X_test_gcn = X_test_gcn[:max_test]
+    Y_test = Y_test[:max_test]
+    n_train_samples = max_train
+    n_val_samples = max_val
+    n_test_samples = max_test    
+    """
+
+    #########################################################
     
+    # flatten 成节点级
+    X_train = X_train_gcn.reshape(n_train_samples * n_nodes, gcn_dim)
     Y_train = Y_train.reshape(n_train_samples * n_nodes, args.pred_len)
+    X_val = X_val_gcn.reshape(n_val_samples * n_nodes, gcn_dim)
     Y_val = Y_val.reshape(n_val_samples * n_nodes, args.pred_len)
+    X_test = X_test_gcn.reshape(n_test_samples * n_nodes, gcn_dim)
     Y_test = Y_test.reshape(n_test_samples * n_nodes, args.pred_len)
     
-    # 限制训练集规模，加速调试
-    max_train = 200
-    X_train, Y_train = X_train[:max_train], Y_train[:max_train]    
-    
     # 初始化模型
-    model = get_model(args.model, input_size=gcn_dim, **args.model_params)
+    model = get_model(args.model, input_size=gcn_dim, processor=processor, **args.model_params)
     print("================ 训练任务信息 ================")
     print(f"模型类型: {args.model}")
     print(f"模型参数: {args.model_params}")
@@ -98,38 +114,39 @@ def train(args):
     # 训练模型
     model.fit(X_train, Y_train, writer=writer)
     
+    print("\n在验证集上评估模型...")
     val_pred = model.predict(X_val)
-    val_pred = val_pred.reshape(n_val_samples, n_nodes, args.pred_len)
-    Y_val = Y_val.reshape(n_val_samples, n_nodes, args.pred_len)
     val_pred = processor.inverse_normalize_target(val_pred)
     y_val = processor.inverse_normalize_target(Y_val)
+    val_pred = val_pred.reshape(n_val_samples, n_nodes, args.pred_len)
+    y_val = y_val.reshape(n_val_samples, n_nodes, args.pred_len)
     val_metrics = calculate_metrics(y_val, val_pred)
     
+    print("\n在测试集上评估模型...")
     y_pred = model.predict(X_test)
-    y_pred = y_pred.reshape(n_test_samples, n_nodes, args.pred_len)
-    Y_test = Y_test.reshape(n_test_samples, n_nodes, args.pred_len)
     y_pred = processor.inverse_normalize_target(y_pred)
     y_test = processor.inverse_normalize_target(Y_test)
+    y_pred = y_pred.reshape(n_test_samples, n_nodes, args.pred_len)
+    y_test = y_test.reshape(n_test_samples, n_nodes, args.pred_len)
     
     metrics = calculate_metrics(y_test, y_pred)
     node_metrics = calculate_node_metrics(y_test, y_pred)
     horizon_metrics = calculate_horizon_metrics(y_test, y_pred)
     
-    for name, value in metrics.items():
-        writer.add_scalar(f'final_test/{name}', value, 0)
+    print("\n验证集指标:")
     for name, value in val_metrics.items():
         writer.add_scalar(f'final_val/{name}', value, 0)
+        print(f"{name}: {value:.4f}")
+    
+    print("\n测试集指标:")
+    for name, value in metrics.items():
+        writer.add_scalar(f'final_test/{name}', value, 0)
+        print(f"{name}: {value:.4f}")
     
     if not os.path.exists('saved_models'):
         os.makedirs('saved_models')
     model.save(os.path.join('saved_models', f'{args.model}.pkl'))
     
-    print(f'Model: {args.model}')
-    print('Overall metrics:')
-    for name, value in metrics.items():
-        print(f'{name}: {value:.4f}')
-    
-    os.makedirs('app/data', exist_ok=True)
     np.save('app/data/predictions.npy', y_pred)
     np.save('app/data/y_true.npy', y_test)
     

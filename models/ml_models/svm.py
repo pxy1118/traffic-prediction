@@ -56,7 +56,7 @@ class MultiOutputSVM(BaseModel):
         
     def set_params(self, **params) -> None:
         for key, value in params.items():
-            setattr(self, key, value)
+            setattr(self, key, value) 
 
 class SVM:
     def __init__(self, C: float = 1.0, epsilon: float = 0.1, learning_rate: float = 0.01, max_iter: int = 1000):

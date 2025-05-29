@@ -1,17 +1,19 @@
 import numpy as np
 from typing import List, Type, Optional, Dict
-from ..base import BaseModel
+from models.base import BaseModel
 from torch.utils.tensorboard import SummaryWriter
-from ...utils.metrics import calculate_metrics
+from utils.metrics import calculate_metrics
 
 class StackingEnsemble(BaseModel):
-    def __init__(self, base_models: List[Type[BaseModel]], meta_model: Type[BaseModel], **meta_params):
+    def __init__(self, base_models: List[Type[BaseModel]], meta_model: Type[BaseModel], processor=None, **meta_params):
         super().__init__('StackingEnsemble')
         self.base_models = base_models
         self.meta_model = meta_model
         self.meta_params = meta_params
+        self.base_params = {}  
         self.trained_base_models = []
         self.trained_meta_model = None
+        self.processor = processor
         
     def evaluate(self, X: np.ndarray, y: np.ndarray) -> Dict:
         """评估所有基学习器和集成模型的性能
@@ -76,7 +78,8 @@ class StackingEnsemble(BaseModel):
         # 第一层：训练基模型
         meta_features = []
         for i, model_class in enumerate(self.base_models):
-            model = model_class(name=f'base_model_{i}')
+            print(f"\n训练基模型 {i+1}/{len(self.base_models)}: {model_class.__name__}")
+            model = model_class(**self.base_params)
             model.fit(X, y, writer=writer, output_idx=i)
             self.trained_base_models.append(model)
             
@@ -86,25 +89,44 @@ class StackingEnsemble(BaseModel):
             
             # 记录基模型性能
             if writer is not None:
-                metrics = calculate_metrics(y, predictions)
+                # 反归一化预测结果和真实值
+                y_denorm = self.processor.inverse_normalize_target(y)
+                pred_denorm = self.processor.inverse_normalize_target(predictions)
+                metrics = calculate_metrics(y_denorm, pred_denorm)
                 for metric_name, value in metrics.items():
                     writer.add_scalar(f'{metric_name}/base_model_{i}', value, 0)
+                print(f"基模型 {i+1} 训练完成，MAE: {metrics['MAE']:.4f}")
         
+        print("\n开始训练元模型...")
         # 拼接元特征
         meta_X = np.column_stack(meta_features)
         
         # 第二层：训练元模型
         self.trained_meta_model = self.meta_model(**self.meta_params)
         self.trained_meta_model.fit(meta_X, y, writer=writer, output_idx=len(self.base_models))
+        print("元模型训练完成！")
         
         # 记录最终集成效果
         if writer is not None:
-            y_pred = self.predict(X)
-            metrics = calculate_metrics(y, y_pred)
+            print("\n计算最终集成效果...")
+            # 使用训练好的模型进行预测
+            meta_features = []
+            for model in self.trained_base_models:
+                predictions = model.predict(X)
+                meta_features.append(predictions)
+            meta_X = np.column_stack(meta_features)
+            y_pred = self.trained_meta_model.predict(meta_X)
+            
+            # 反归一化预测结果和真实值
+            y_denorm = self.processor.inverse_normalize_target(y)
+            pred_denorm = self.processor.inverse_normalize_target(y_pred)
+            metrics = calculate_metrics(y_denorm, pred_denorm)
             for metric_name, value in metrics.items():
                 writer.add_scalar(f'{metric_name}/ensemble', value, 0)
+            print(f"集成模型 MAE: {metrics['MAE']:.4f}")
         
         self.is_fitted = True
+        print("\nStacking集成模型训练完成！")
         
     def predict(self, X: np.ndarray) -> np.ndarray:
         if not self.is_fitted or self.trained_meta_model is None:

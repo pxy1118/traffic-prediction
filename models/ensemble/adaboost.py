@@ -1,11 +1,11 @@
 import numpy as np
 from typing import List, Type, Optional, Dict
-from ..base import BaseModel
+from models.base import BaseModel
 from torch.utils.tensorboard import SummaryWriter
-from ...utils.metrics import calculate_metrics
+from utils.metrics import calculate_metrics
 
 class AdaBoostEnsemble(BaseModel):
-    def __init__(self, base_model_class: Type[BaseModel], n_estimators: int = 10, learning_rate: float = 1.0, **base_params):
+    def __init__(self, base_model_class: Type[BaseModel], n_estimators: int = 10, learning_rate: float = 1.0, processor=None, **base_params):
         super().__init__('AdaBoostEnsemble')
         self.base_model_class = base_model_class
         self.n_estimators = n_estimators
@@ -13,6 +13,7 @@ class AdaBoostEnsemble(BaseModel):
         self.base_params = base_params
         self.models = []
         self.weights = []
+        self.processor = processor
         
     def evaluate(self, X: np.ndarray, y: np.ndarray) -> Dict:
         """评估所有基学习器和集成模型的性能
@@ -76,10 +77,12 @@ class AdaBoostEnsemble(BaseModel):
         self.models = []
         self.weights = []
         
+        print(f"\n开始训练AdaBoost集成模型 (n_estimators={self.n_estimators}, learning_rate={self.learning_rate})...")
         # 初始化样本权重
         sample_weights = np.ones(n_samples) / n_samples
         
         for i in range(self.n_estimators):
+            print(f"\n训练基模型 {i+1}/{self.n_estimators}")
             # 训练基模型
             model = self.base_model_class(**self.base_params)
             model.fit(X, y, sample_weight=sample_weights)
@@ -93,6 +96,7 @@ class AdaBoostEnsemble(BaseModel):
             weighted_error = np.sum(sample_weights * errors) / np.sum(sample_weights)
             
             if weighted_error >= 0.5:
+                print(f"基模型 {i+1} 加权误差率 {weighted_error:.4f} >= 0.5，停止训练")
                 break
                 
             alpha = self.learning_rate * 0.5 * np.log((1 - weighted_error) / weighted_error)
@@ -104,19 +108,29 @@ class AdaBoostEnsemble(BaseModel):
             
             # 记录基模型性能
             if writer is not None:
-                metrics = calculate_metrics(y, predictions)
+                # 反归一化预测结果和真实值
+                y_denorm = self.processor.inverse_normalize_target(y)
+                pred_denorm = self.processor.inverse_normalize_target(predictions)
+                metrics = calculate_metrics(y_denorm, pred_denorm)
                 for metric_name, value in metrics.items():
                     writer.add_scalar(f'{metric_name}/base_model_{i}', value, 0)
                 writer.add_scalar('weight/base_model_{i}', alpha, 0)
+                print(f"基模型 {i+1} 训练完成，MAE: {metrics['MAE']:.4f}, 权重: {alpha:.4f}")
         
         # 记录最终集成效果
         if writer is not None:
+            print("\n计算最终集成效果...")
             y_pred = self.predict(X)
-            metrics = calculate_metrics(y, y_pred)
+            # 反归一化预测结果和真实值
+            y_denorm = self.processor.inverse_normalize_target(y)
+            pred_denorm = self.processor.inverse_normalize_target(y_pred)
+            metrics = calculate_metrics(y_denorm, pred_denorm)
             for metric_name, value in metrics.items():
                 writer.add_scalar(f'{metric_name}/ensemble', value, 0)
+            print(f"集成模型 MAE: {metrics['MAE']:.4f}")
         
         self.is_fitted = True
+        print("\nAdaBoost集成模型训练完成！")
         
     def predict(self, X: np.ndarray) -> np.ndarray:
         if not self.is_fitted:
