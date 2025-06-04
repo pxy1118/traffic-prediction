@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="500" viewBox="0 0 900 500" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .main-rect { fill: none; stroke: #222; stroke-width: 3; }
+    .section-rect { fill: none; stroke: #222; stroke-width: 2; }
+    .sub-rect { fill: none; stroke: #222; stroke-width: 1.5; }
+    .label { font-size: 26px; font-family: 'Arial', sans-serif; fill: #222; font-weight: bold; }
+    .section-label { font-size: 22px; font-family: 'Arial', sans-serif; fill: #222; }
+    .sub-label { font-size: 20px; font-family: 'Arial', sans-serif; fill: #222; }
+  </style>
+  <!-- 外层大框 -->
+  <rect x="30" y="30" width="840" height="440" class="main-rect"/>
+  <text x="450" y="65" text-anchor="middle" class="label">可视化系统架构</text>
+
+  <!-- 训练监控层 -->
+  <rect x="50" y="90" width="800" height="150" class="section-rect"/>
+  <text x="70" y="120" class="section-label">训练监控层（Training Monitor）</text>
+  <!-- TensorBoard -->
+  <rect x="120" y="140" width="660" height="80" class="sub-rect"/>
+  <text x="450" y="170" text-anchor="middle" class="sub-label">TensorBoard</text>
+  <!-- 损失曲线、评估指标、模型对比 -->
+  <rect x="180" y="180" width="140" height="36" class="sub-rect"/>
+  <text x="250" y="205" text-anchor="middle" class="sub-label">损失曲线</text>
+  <rect x="370" y="180" width="140" height="36" class="sub-rect"/>
+  <text x="440" y="205" text-anchor="middle" class="sub-label">评估指标</text>
+  <rect x="560" y="180" width="140" height="36" class="sub-rect"/>
+  <text x="630" y="205" text-anchor="middle" class="sub-label">模型对比</text>
+
+  <!-- 结果展示层 -->
+  <rect x="50" y="260" width="800" height="180" class="section-rect"/>
+  <text x="70" y="295" class="section-label">结果展示层（Result Visualization）</text>
+  <!-- Dash Web -->
+  <rect x="120" y="320" width="660" height="80" class="sub-rect"/>
+  <text x="450" y="350" text-anchor="middle" class="sub-label">Dash Web</text>
+  <!-- 节点分布图、预测曲线、误差分析 -->
+  <rect x="180" y="360" width="140" height="36" class="sub-rect"/>
+  <text x="250" y="385" text-anchor="middle" class="sub-label">节点分布图</text>
+  <rect x="370" y="360" width="140" height="36" class="sub-rect"/>
+  <text x="440" y="385" text-anchor="middle" class="sub-label">预测曲线</text>
+  <rect x="560" y="360" width="140" height="36" class="sub-rect"/>
+  <text x="630" y="385" text-anchor="middle" class="sub-label">误差分析</text>
+</svg>

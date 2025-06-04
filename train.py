@@ -55,7 +55,11 @@ def get_model(model_name: str, input_size: Optional[int] = None, processor: Opti
         kwargs['base_models'] = [MultiOutputLinear, MultiOutputKNN]
         kwargs['meta_model'] = MultiOutputLinear
     
-    return models[model_name](processor=processor, **kwargs)
+    # 只在集成模型中传入 processor
+    if model_name in ["bagging", "adaboost", "stacking"]:
+        return models[model_name](processor=processor, **kwargs)
+    else:
+        return models[model_name](**kwargs)
 
 
 def train(args):
@@ -81,10 +85,9 @@ def train(args):
     #########################################################
     ####要训练全量数据注释掉这里
     # 限制样本数
-    """
-    max_train = 2
-    max_val = 2
-    max_test = 2
+    max_train = 200
+    max_val = 200
+    max_test = 200
     X_train_gcn = X_train_gcn[:max_train]
     Y_train = Y_train[:max_train]
     X_val_gcn = X_val_gcn[:max_val]
@@ -94,7 +97,6 @@ def train(args):
     n_train_samples = max_train
     n_val_samples = max_val
     n_test_samples = max_test    
-    """
 
     #########################################################
     

@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/peijieyuan/Desktop/traffic-prediction/train.py", line 196, in <module>
+    train(args)
+  File "/Users/peijieyuan/Desktop/traffic-prediction/train.py", line 108, in train
+    model = get_model(args.model, input_size=gcn_dim, processor=processor, **args.model_params)
+  File "/Users/peijieyuan/Desktop/traffic-prediction/train.py", line 58, in get_model
+    return models[model_name](processor=processor, **kwargs)
+TypeError: __init__() got an unexpected keyword argument 'processor'
